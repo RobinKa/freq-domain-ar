@@ -20,8 +20,9 @@ The current implementation uses mnist as a dataset. Note that no time was spent 
 
 Below are some examples output where we autoregressively sample 15 pixels at a time (because that's the patchification size). The left part is the frequency domain
 
-![](media/one.mp4)
-![](media/three.mp4)
+https://github.com/user-attachments/assets/fa89a10c-37e8-4e99-af33-de4a3f1b9591
+
+https://github.com/user-attachments/assets/52956b9f-fe81-413b-a2d9-a2f97871bb92
 
 ## How to run
 
