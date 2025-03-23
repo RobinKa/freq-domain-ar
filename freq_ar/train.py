@@ -103,6 +103,47 @@ class ImageLoggingCallback(Callback):
             )
 
 
+class AutoRegressiveSamplingCallback(Callback):
+    def __init__(self, num_samples, log_every_n_steps=250):  # Default to 250 steps
+        self.num_samples = num_samples
+        self.log_every_n_steps = log_every_n_steps
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if trainer.global_step % self.log_every_n_steps == 0:
+            with torch.no_grad():
+                for _ in range(self.num_samples):
+                    random_label = torch.randint(0, 10, (1,), device=pl_module.device)
+                    generated_sequence = torch.zeros(
+                        1, 28 * 28, 2, device=pl_module.device
+                    )  # Initialize an empty sequence
+
+                    for i in range(28 * 28):  # Generate pixel by pixel
+                        output = pl_module(generated_sequence, random_label)
+                        next_pixel = output[:, i]  # Take the next predicted pixel
+                        generated_sequence[:, i] = next_pixel  # Update the sequence
+
+                    freq_image = generated_sequence  # The full generated sequence
+                    complex_image = split_to_complex(freq_image)
+                    time_image = freq_to_time(complex_image)
+
+                    freq_image_vis = visualize_frequency_image(
+                        complex_image.abs().cpu().numpy()
+                    )
+                    time_image_vis = visualize_frequency_image(time_image.cpu().numpy())
+
+                    # Log to Wandb
+                    trainer.logger.experiment.log(
+                        {
+                            f"ar_frequency_image_step_{trainer.global_step}": wandb.Image(
+                                freq_image_vis, caption=f"Label: {random_label.item()}"
+                            ),
+                            f"ar_time_image_step_{trainer.global_step}": wandb.Image(
+                                time_image_vis, caption=f"Label: {random_label.item()}"
+                            ),
+                        }
+                    )
+
+
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
 
@@ -128,7 +169,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--run_name", type=str, default=None, help="Wandb run name")
     parser.add_argument(
-        "--log_every_n_steps", type=int, default=1000, help="Log images every n steps"
+        "--log_every_n_steps", type=int, default=250, help="Log images every n steps"
     )
     parser.add_argument(
         "--image_dtype",
@@ -171,11 +212,18 @@ if __name__ == "__main__":
         log_every_n_steps=args.log_every_n_steps
     )  # Initialize callback
 
+    autoregressive_sampling_callback = AutoRegressiveSamplingCallback(
+        num_samples=5, log_every_n_steps=args.log_every_n_steps
+    )  # Initialize autoregressive sampling callback
+
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         accelerator=args.accelerator,
         devices=args.devices,
         logger=wandb_logger,  # Pass WandbLogger to the trainer
-        callbacks=[image_logging_callback],  # Add callback to trainer
+        callbacks=[
+            image_logging_callback,
+            autoregressive_sampling_callback,
+        ],  # Add callbacks
     )
     trainer.fit(model, train_loader)
