@@ -1,5 +1,7 @@
+import numpy as np
 import pytorch_lightning as pl
 import torch
+from einops import repeat
 from jsonargparse import ActionConfigFile, ArgumentParser
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import WandbLogger
@@ -9,7 +11,6 @@ import wandb
 from freq_ar.dataset import FrequencyMNIST, unsort_by_frequency
 from freq_ar.model import FrequencyARModel
 from freq_ar.visualize import visualize_frequency_image
-from einops import repeat
 
 
 class FrequencyARTrainer(pl.LightningModule):
@@ -119,6 +120,14 @@ class AutoRegressiveSamplingCallback(Callback):
         self.num_samples = num_samples
         self.log_every_n_steps = log_every_n_steps
 
+    @staticmethod
+    def create_video(images):
+        """Create a video from a list of images."""
+        video = np.array([np.array(image) for image in images])
+        # THWC -> TCHW
+        video = np.transpose(video, (0, 3, 1, 2))
+        return video
+
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if trainer.global_step % self.log_every_n_steps == 0:
             trainer.model.eval()
@@ -129,6 +138,9 @@ class AutoRegressiveSamplingCallback(Callback):
                     generated_sequence = torch.zeros(
                         1, 28 * 15, 2, device=pl_module.device
                     )  # Initialize an empty sequence
+
+                    freq_images = []
+                    time_images = []
 
                     for i in range(0, 28 * 15, 15):  # Generate pixel by pixel
                         output = pl_module(generated_sequence, random_label)
@@ -143,26 +155,31 @@ class AutoRegressiveSamplingCallback(Callback):
                         complex_image = split_to_complex(freq_image)
                         time_image = freq_to_time(complex_image)
 
-                        freq_image_vis = visualize_frequency_image(
-                            complex_image.abs().cpu().numpy()
+                        freq_images.append(
+                            visualize_frequency_image(complex_image.abs().cpu().numpy())
                         )
-                        time_image_vis = visualize_frequency_image(
-                            time_image.cpu().numpy()
+                        time_images.append(
+                            visualize_frequency_image(time_image.cpu().numpy())
                         )
 
-                        # Log to Wandb
-                        trainer.logger.experiment.log(
-                            {
-                                f"ar_frequency_image_{sample_index}_{i}": wandb.Image(
-                                    freq_image_vis,
-                                    caption=f"Label: {random_label.item()}",
-                                ),
-                                f"ar_time_image_step_{sample_index}_{i}": wandb.Image(
-                                    time_image_vis,
-                                    caption=f"Label: {random_label.item()}",
-                                ),
-                            }
-                        )
+                    # Create videos, TCHW
+                    freq_video = self.create_video(freq_images)
+                    time_video = self.create_video(time_images)
+                    freq_and_time_video = np.concatenate(
+                        [freq_video, time_video], axis=-1
+                    )
+
+                    # Log videos to Wandb
+                    trainer.logger.experiment.log(
+                        {
+                            f"ar_video_{sample_index}": wandb.Video(
+                                freq_and_time_video,
+                                fps=5,
+                                format="mp4",
+                                caption=f"Label: {random_label.item()}",
+                            ),
+                        }
+                    )
 
             trainer.model.train()
 
@@ -174,10 +191,10 @@ if __name__ == "__main__":
     parser.add_argument("--config", action=ActionConfigFile)
     parser.add_argument("--input_dim", type=int, default=2, help="Input dimension")
     parser.add_argument(
-        "--embed_dim", type=int, default=512, help="Embedding dimension"
+        "--embed_dim", type=int, default=768, help="Embedding dimension"
     )
     parser.add_argument(
-        "--num_heads", type=int, default=4, help="Number of attention heads"
+        "--num_heads", type=int, default=6, help="Number of attention heads"
     )
     parser.add_argument("--num_layers", type=int, default=2, help="Number of layers")
     parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")

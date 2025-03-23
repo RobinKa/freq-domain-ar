@@ -1,8 +1,8 @@
-import numpy as np
-import torch
-from torchvision import datasets, transforms
-from einops import rearrange
 from functools import lru_cache
+
+import torch
+from einops import rearrange
+from torchvision import datasets, transforms
 
 
 @lru_cache(maxsize=1)

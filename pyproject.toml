@@ -10,7 +10,7 @@ dependencies = [
     "numpy>=1.24.0",
     "matplotlib>=3.7.0",
     "jsonargparse>=4.20.0",
-    "wandb>=0.19.8",
+    "wandb[media]>=0.19.8",
     "einops>=0.8.1",
 ]
 
