@@ -50,16 +50,18 @@ class FrequencyARModel(nn.Module):
         self.unembed_first = nn.Linear(embed_dim, input_dim)
 
         self.patchify = nn.Conv1d(
-            kernel_size=15, stride=15, in_channels=input_dim, out_channels=embed_dim
+            kernel_size=1, stride=1, in_channels=input_dim, out_channels=embed_dim
         )
         self.unpatchify = nn.ConvTranspose1d(
-            kernel_size=15, stride=15, in_channels=embed_dim, out_channels=input_dim
+            kernel_size=1, stride=1, in_channels=embed_dim, out_channels=input_dim
         )
 
     def forward(self, x):
         # Ensure input has a sequence dimension
         if x.dim() == 2:  # If input is (batch_size, input_dim)
             x = x.unsqueeze(1)  # Add a sequence dimension: (batch_size, 1, input_dim)
+
+        # orig_x = x
 
         # Apply embedding and positional encoding
         # x = self.embedding(x)
@@ -106,5 +108,7 @@ class FrequencyARModel(nn.Module):
         yy = self.unembed_first(yy)
 
         x = torch.cat([yy, xx], dim=1)
+
+        # x = orig_x + x
 
         return x

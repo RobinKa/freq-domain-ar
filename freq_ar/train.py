@@ -30,7 +30,7 @@ class FrequencyARTrainer(pl.LightningModule):
         x = torch.cat([label_tensor, x], dim=1)  # Concatenate label with input
         output = self.model(x)
         assert output.shape[1:] == (28 * 15 + 1, 2), output.shape
-        return output[:, 1:]  # Remove the label from the output
+        return output[:, :-1]
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -45,9 +45,9 @@ class FrequencyARTrainer(pl.LightningModule):
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
     # Apply expm1 to complex freq_image's magnitude while keeping its angle
-    # complex_image = torch.expm1(complex_image.abs()) * torch.exp(
-    #     1j * complex_image.angle()
-    # )
+    complex_image = torch.expm1(complex_image.abs()) * torch.exp(
+        1j * complex_image.angle()
+    )
 
     time_image = torch.fft.irfft2(complex_image).real
     # time_image = (time_image - time_image.min()) / (time_image.max() - time_image.min())
