@@ -45,9 +45,6 @@ class FrequencyARTrainer(pl.LightningModule):
 
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
-    # Undo the sorting by frequency
-    complex_image = unsort_by_frequency(complex_image)
-
     # Apply expm1 to complex freq_image's magnitude while keeping its angle
     complex_image = torch.expm1(complex_image.abs()) * torch.exp(
         1j * complex_image.angle()
@@ -60,6 +57,10 @@ def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
     freq_image = freq_image.float().view(28, 15, 2)
     freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
+
+    # Undo the sorting by frequency
+    freq_image_complex = unsort_by_frequency(freq_image_complex)
+
     return freq_image_complex
 
 
