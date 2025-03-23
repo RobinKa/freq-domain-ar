@@ -14,9 +14,11 @@ from freq_ar.visualize import visualize_frequency_image
 
 
 class FrequencyARTrainer(pl.LightningModule):
-    def __init__(self, input_dim, embed_dim, num_heads, num_layers, lr, compile_model):
+    def __init__(
+        self, input_dim, embed_dim, num_heads, num_layers, patchify, lr, compile_model
+    ):
         super().__init__()
-        model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers)
+        model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers, patchify)
         self.model = (
             torch.compile(model, fullgraph=True) if compile_model else model
         )  # Conditionally compile the model
@@ -117,8 +119,11 @@ class ImageLoggingCallback(Callback):
 
 
 class AutoRegressiveSamplingCallback(Callback):
-    def __init__(self, num_samples, log_every_n_steps=250):  # Default to 250 steps
+    def __init__(
+        self, num_samples, patchify, log_every_n_steps=250
+    ):  # Default to 250 steps
         self.num_samples = num_samples
+        self.patchify = patchify
         self.log_every_n_steps = log_every_n_steps
 
     @staticmethod
@@ -143,13 +148,15 @@ class AutoRegressiveSamplingCallback(Callback):
                     freq_images = []
                     time_images = []
 
-                    for i in range(0, 28 * 15, 15):  # Generate pixel by pixel
+                    for i in range(
+                        0, 28 * 15, self.patchify
+                    ):  # Generate pixel by pixel
                         output = pl_module(generated_sequence, random_label)
-                        next_pixel = output[
-                            :, i : i + 15
-                        ]  # Take the next predicted pixel
-                        generated_sequence[:, i : i + 15] = (
-                            next_pixel  # Update the sequence
+                        next_pixels = output[
+                            :, i : i + self.patchify
+                        ]  # Take the next predicted pixels
+                        generated_sequence[:, i : i + self.patchify] = (
+                            next_pixels  # Update the sequence
                         )
 
                         freq_image = generated_sequence  # The full generated sequence
@@ -223,6 +230,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable model compilation for optimization",
     )
+    parser.add_argument(
+        "--patchify",
+        type=int,
+        default=15,
+        help="Patchify the input image for the transformer",
+    )
 
     args = parser.parse_args()
 
@@ -233,7 +246,7 @@ if __name__ == "__main__":
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=4,  # Add workers for data loading
+        num_workers=4,
     )
 
     model = FrequencyARTrainer(
@@ -241,30 +254,29 @@ if __name__ == "__main__":
         embed_dim=args.embed_dim,
         num_heads=args.num_heads,
         num_layers=args.num_layers,
+        patchify=args.patchify,
         lr=args.lr,
-        compile_model=args.compile_model,  # Pass compile_model argument
+        compile_model=args.compile_model,
     ).to(dtype=image_dtype)
 
-    wandb_logger = WandbLogger(
-        project=args.project_name, name=args.run_name
-    )  # Initialize WandbLogger
+    wandb_logger = WandbLogger(project=args.project_name, name=args.run_name)
 
     image_logging_callback = ImageLoggingCallback(
         log_every_n_steps=args.log_every_n_steps
-    )  # Initialize callback
+    )
 
     autoregressive_sampling_callback = AutoRegressiveSamplingCallback(
-        num_samples=1, log_every_n_steps=args.log_every_n_steps
-    )  # Initialize autoregressive sampling callback
+        num_samples=1, patchify=args.patchify, log_every_n_steps=args.log_every_n_steps
+    )
 
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         accelerator=args.accelerator,
         devices=args.devices,
-        logger=wandb_logger,  # Pass WandbLogger to the trainer
+        logger=wandb_logger,
         callbacks=[
             image_logging_callback,
             autoregressive_sampling_callback,
-        ],  # Add callbacks
+        ],
     )
     trainer.fit(model, train_loader)

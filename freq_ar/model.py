@@ -30,7 +30,7 @@ class LearnablePositionEncoding(nn.Module):
 
 
 class FrequencyARModel(nn.Module):
-    def __init__(self, input_dim, embed_dim, num_heads, num_layers):
+    def __init__(self, input_dim, embed_dim, num_heads, num_layers, patchify):
         super().__init__()
         self.positional_encoding = PositionalEncoding(embed_dim)
         # self.positional_encoding = LearnablePositionEncoding(embed_dim)
@@ -49,10 +49,16 @@ class FrequencyARModel(nn.Module):
         self.unembed_first = nn.Linear(embed_dim, input_dim)
 
         self.patchify = nn.Conv1d(
-            kernel_size=15, stride=15, in_channels=input_dim, out_channels=embed_dim
+            kernel_size=patchify,
+            stride=patchify,
+            in_channels=input_dim,
+            out_channels=embed_dim,
         )
         self.unpatchify = nn.ConvTranspose1d(
-            kernel_size=15, stride=15, in_channels=embed_dim, out_channels=input_dim
+            kernel_size=patchify,
+            stride=patchify,
+            in_channels=embed_dim,
+            out_channels=input_dim,
         )
 
     def forward(self, x):
@@ -90,7 +96,7 @@ class FrequencyARModel(nn.Module):
         x = self.unpatchify(x)
         x = x.permute(0, 2, 1)
 
-        # x.shape[1] is n * 15 instead of (n-1) * 15 + 1.
+        # x.shape[1] is n * patchify instead of (n-1) * patchify + 1.
         # Remove the excess.
         x = x[:, : orig_shape[1]]
 
