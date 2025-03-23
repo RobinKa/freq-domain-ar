@@ -9,21 +9,31 @@ import wandb
 from freq_ar.dataset import FrequencyMNIST
 from freq_ar.model import FrequencyARModel
 from freq_ar.visualize import visualize_frequency_image
+from einops import repeat
 
 
 class FrequencyARTrainer(pl.LightningModule):
-    def __init__(self, input_dim, embed_dim, num_heads, num_layers, lr):
+    def __init__(self, input_dim, embed_dim, num_heads, num_layers, lr, compile_model):
         super().__init__()
-        self.model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers)
+        model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers)
+        self.model = (
+            torch.compile(model, fullgraph=True) if compile_model else model
+        )  # Conditionally compile the model
         self.loss_fn = torch.nn.MSELoss()
         self.lr = lr
 
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, x, label):
+        # convert label from B to B 1 2 (repeated across last dim)
+        label_tensor = repeat(label.to(dtype=x.dtype) / 9, "B -> B 1 2")
+        assert x.shape[1:] == (28 * 28, 2)
+
+        x = torch.cat([label_tensor, x], dim=1)  # Concatenate label with input
+        output = self.model(x)
+        return output[:, 1:]  # Remove the label from the output
 
     def training_step(self, batch, batch_idx):
-        x, _ = batch
-        x_hat = self(x)
+        x, y = batch
+        x_hat = self(x, y)  # Pass label `y` to the forward method
         loss = self.loss_fn(x_hat, x)
         self.log("train_loss", loss)
         return loss
@@ -39,7 +49,7 @@ def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
 
 
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
-    freq_image = freq_image.view(28, 28, 2)
+    freq_image = freq_image.float().view(28, 28, 2)
     freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
     return freq_image_complex
 
@@ -53,7 +63,7 @@ class ImageLoggingCallback(Callback):
             x, y = batch  # Extract a sample from the batch
             with torch.no_grad():
                 freq_image = pl_module(
-                    x[0].unsqueeze(0)
+                    x[0].unsqueeze(0), y[0].unsqueeze(0)
                 )  # Process the sample through the model
 
             complex_image = split_to_complex(freq_image)
@@ -75,10 +85,18 @@ class ImageLoggingCallback(Callback):
             # Log to Wandb
             trainer.logger.experiment.log(
                 {
-                    "frequency_image": wandb.Image(freq_image_vis),
-                    "time_image": wandb.Image(time_image_vis),
-                    "input_image": wandb.Image(input_image_vis),
-                    "input_time_image": wandb.Image(input_time_image_vis),
+                    "frequency_image": wandb.Image(
+                        freq_image_vis, caption=f"Label: {y[0].item()}"
+                    ),
+                    "time_image": wandb.Image(
+                        time_image_vis, caption=f"Label: {y[0].item()}"
+                    ),
+                    "input_image": wandb.Image(
+                        input_image_vis, caption=f"Label: {y[0].item()}"
+                    ),
+                    "input_time_image": wandb.Image(
+                        input_time_image_vis, caption=f"Label: {y[0].item()}"
+                    ),
                     "ground_truth": y[0].item(),  # Log ground truth as a scalar value
                 }
             )
@@ -89,9 +107,7 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument("--config", action=ActionConfigFile)
-    parser.add_argument(
-        "--input_dim", type=int, default=2 * 784, help="Input dimension"
-    )
+    parser.add_argument("--input_dim", type=int, default=2, help="Input dimension")
     parser.add_argument(
         "--embed_dim", type=int, default=128, help="Embedding dimension"
     )
@@ -113,11 +129,29 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_every_n_steps", type=int, default=1000, help="Log images every n steps"
     )
+    parser.add_argument(
+        "--image_dtype",
+        type=str,
+        default="float32",
+        help="Data type for images (e.g., float32, bfloat16)",
+    )
+    parser.add_argument(
+        "--compile_model",
+        action="store_true",
+        help="Enable model compilation for optimization",
+    )
 
     args = parser.parse_args()
 
-    train_dataset = FrequencyMNIST(train=True)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    image_dtype = getattr(torch, args.image_dtype)
+
+    train_dataset = FrequencyMNIST(train=True, image_dtype=image_dtype)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4,  # Add workers for data loading
+    )
 
     model = FrequencyARTrainer(
         input_dim=args.input_dim,
@@ -125,7 +159,8 @@ if __name__ == "__main__":
         num_heads=args.num_heads,
         num_layers=args.num_layers,
         lr=args.lr,
-    )
+        compile_model=args.compile_model,  # Pass compile_model argument
+    ).to(dtype=image_dtype)
 
     wandb_logger = WandbLogger(
         project=args.project_name, name=args.run_name
