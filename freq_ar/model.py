@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class FrequencyARModel(nn.Module):
     def __init__(self, input_dim, embed_dim, num_heads, num_layers):
         super().__init__()
