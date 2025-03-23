@@ -2,6 +2,32 @@ import numpy as np
 import torch
 from torchvision import datasets, transforms
 from einops import rearrange
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def get_frequency_sorting_index():
+    freq_x = torch.fft.fftfreq(28)
+    freq_y = torch.fft.rfftfreq(28)
+    freqs = torch.meshgrid(freq_x, freq_y, indexing="ij")
+    coord_length_squared = freqs[0] ** 2 + freqs[1] ** 2
+    return torch.argsort(coord_length_squared.view(-1))
+
+
+def sort_by_frequency(freq_image):
+    # Sort the image by frequency from low to high.
+    sort_idx = get_frequency_sorting_index()
+    return freq_image.view(-1)[sort_idx].view(28, 15)
+
+
+def unsort_by_frequency(sorted_freq_image):
+    """Undoes sort_by_frequency"""
+    # Get the sorting indices used in sort_by_frequency.
+    sort_idx = get_frequency_sorting_index()
+    # Compute the inverse permutation.
+    unsort_idx = torch.argsort(sort_idx)
+    # Reorder the sorted image back to its original order.
+    return sorted_freq_image.view(-1)[unsort_idx].view(28, 15)
 
 
 class FrequencyMNIST(torch.utils.data.Dataset):
@@ -28,6 +54,10 @@ class FrequencyMNIST(torch.utils.data.Dataset):
             1j * torch.angle(freq_image)
         )
 
+        # Sort the image by frequency from low to high.
+        freq_image = sort_by_frequency(freq_image)
+
+        # Split the complex tensor into real and imaginary parts
         freq_image_real = freq_image.real
         freq_image_imag = freq_image.imag
         freq_image = torch.stack((freq_image_real, freq_image_imag), dim=-1)

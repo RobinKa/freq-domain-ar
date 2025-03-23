@@ -1,8 +1,7 @@
+import math
+
 import torch
 import torch.nn as nn
-import math  # Added for positional encoding
-from einops import rearrange  # Added for clearer reshaping
-import torch.nn.functional as F
 
 
 class PositionalEncoding(nn.Module):
@@ -63,10 +62,7 @@ class FrequencyARModel(nn.Module):
 
         orig_shape = x.shape
 
-        # orig_x = x
-
-        # Apply embedding and positional encoding
-        # x = self.embedding(x)
+        # Apply input layers
         xx = x[:, 1:]
         xx = xx.permute(0, 2, 1)
         xx = self.patchify(xx)
@@ -75,6 +71,7 @@ class FrequencyARModel(nn.Module):
         yy = self.embed_first(yy)
         x = torch.cat([yy, xx], dim=1)
 
+        # Apply positional encoding
         x = self.positional_encoding(x)
 
         causal_mask = nn.Transformer.generate_square_subsequent_mask(
@@ -88,19 +85,7 @@ class FrequencyARModel(nn.Module):
             is_causal=True,
         )
 
-        # Apply output layer
-        # x = self.output_layer(x)
-
-        # xx = x[:, 1:]
-        # xx = xx.permute(0, 2, 1)
-        # xx = self.unpatchify(xx)
-        # xx = xx.permute(0, 2, 1)
-
-        # yy = x[:, :1]
-        # yy = self.unembed_first(yy)
-
-        # x = torch.cat([yy, xx], dim=1)
-
+        # Apply output layers
         x = x.permute(0, 2, 1)
         x = self.unpatchify(x)
         x = x.permute(0, 2, 1)
@@ -108,7 +93,5 @@ class FrequencyARModel(nn.Module):
         # x.shape[1] is n * 15 instead of (n-1) * 15 + 1.
         # Remove the excess.
         x = x[:, : orig_shape[1]]
-
-        # x = orig_x + x
 
         return x

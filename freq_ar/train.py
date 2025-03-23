@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
 import wandb
-from freq_ar.dataset import FrequencyMNIST
+from freq_ar.dataset import FrequencyMNIST, unsort_by_frequency
 from freq_ar.model import FrequencyARModel
 from freq_ar.visualize import visualize_frequency_image
 from einops import repeat
@@ -44,13 +44,15 @@ class FrequencyARTrainer(pl.LightningModule):
 
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
+    # Undo the sorting by frequency
+    complex_image = unsort_by_frequency(complex_image)
+
     # Apply expm1 to complex freq_image's magnitude while keeping its angle
     complex_image = torch.expm1(complex_image.abs()) * torch.exp(
         1j * complex_image.angle()
     )
 
     time_image = torch.fft.irfft2(complex_image).real
-    # time_image = (time_image - time_image.min()) / (time_image.max() - time_image.min())
     return time_image
 
 
@@ -174,7 +176,7 @@ if __name__ == "__main__":
         "--num_heads", type=int, default=4, help="Number of attention heads"
     )
     parser.add_argument("--num_layers", type=int, default=2, help="Number of layers")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--max_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument(
