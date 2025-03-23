@@ -45,9 +45,9 @@ class FrequencyARTrainer(pl.LightningModule):
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
     # Apply expm1 to complex freq_image's magnitude while keeping its angle
-    complex_image = torch.expm1(complex_image.abs()) * torch.exp(
-        1j * complex_image.angle()
-    )
+    # complex_image = torch.expm1(complex_image.abs()) * torch.exp(
+    #     1j * complex_image.angle()
+    # )
 
     time_image = torch.fft.irfft2(complex_image).real
     # time_image = (time_image - time_image.min()) / (time_image.max() - time_image.min())
@@ -57,12 +57,6 @@ def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
     freq_image = freq_image.float().view(28, 15, 2)
     freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
-
-    # # Apply expm1 to complex freq_image's magnitude while keeping its angle
-    # freq_image_complex = torch.expm1(freq_image_complex.abs()) * torch.exp(
-    #     1j * freq_image_complex.angle()
-    # )
-
     return freq_image_complex
 
 

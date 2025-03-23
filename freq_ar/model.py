@@ -22,11 +22,20 @@ class PositionalEncoding(nn.Module):
         return x + self.encoding[: x.size(0), :]
 
 
+class LearnablePositionEncoding(nn.Module):
+    def __init__(self, embed_dim, max_len=5000):
+        super().__init__()
+        self.encoding = nn.Parameter(torch.randn(max_len, embed_dim))
+
+    def forward(self, x):
+        return x + self.encoding[: x.size(1), :]
+
+
 class FrequencyARModel(nn.Module):
     def __init__(self, input_dim, embed_dim, num_heads, num_layers):
         super().__init__()
-        self.embedding = nn.Linear(input_dim, embed_dim)
-        self.positional_encoding = PositionalEncoding(embed_dim)
+        # self.positional_encoding = PositionalEncoding(embed_dim)
+        self.positional_encoding = LearnablePositionEncoding(embed_dim)
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 d_model=embed_dim,
@@ -36,7 +45,16 @@ class FrequencyARModel(nn.Module):
             ),
             num_layers=num_layers,
         )
-        self.output_layer = nn.Linear(embed_dim, input_dim)
+
+        self.embed_first = nn.Linear(input_dim, embed_dim)
+        self.unembed_first = nn.Linear(embed_dim, input_dim)
+
+        self.patchify = nn.Conv1d(
+            kernel_size=15, stride=15, in_channels=input_dim, out_channels=embed_dim
+        )
+        self.unpatchify = nn.ConvTranspose1d(
+            kernel_size=15, stride=15, in_channels=embed_dim, out_channels=input_dim
+        )
 
     def forward(self, x):
         # Ensure input has a sequence dimension
@@ -44,7 +62,15 @@ class FrequencyARModel(nn.Module):
             x = x.unsqueeze(1)  # Add a sequence dimension: (batch_size, 1, input_dim)
 
         # Apply embedding and positional encoding
-        x = self.embedding(x)
+        # x = self.embedding(x)
+        xx = x[:, 1:]
+        xx = xx.permute(0, 2, 1)
+        xx = self.patchify(xx)
+        xx = xx.permute(0, 2, 1)
+        yy = x[:, :1]
+        yy = self.embed_first(yy)
+        x = torch.cat([yy, xx], dim=1)
+
         x = self.positional_encoding(x)
 
         # Reshape to (seq_len, batch_size, embed_dim) for Transformer
@@ -69,5 +95,16 @@ class FrequencyARModel(nn.Module):
         )  # (seq_len, batch_size, embed_dim) -> (batch_size, seq_len, embed_dim)
 
         # Apply output layer
-        x = self.output_layer(x)
+        # x = self.output_layer(x)
+
+        xx = x[:, 1:]
+        xx = xx.permute(0, 2, 1)
+        xx = self.unpatchify(xx)
+        xx = xx.permute(0, 2, 1)
+
+        yy = x[:, :1]
+        yy = self.unembed_first(yy)
+
+        x = torch.cat([yy, xx], dim=1)
+
         return x
