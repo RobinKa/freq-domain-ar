@@ -139,26 +139,30 @@ class AutoRegressiveSamplingCallback(Callback):
                             next_pixel  # Update the sequence
                         )
 
-                    freq_image = generated_sequence  # The full generated sequence
-                    complex_image = split_to_complex(freq_image)
-                    time_image = freq_to_time(complex_image)
+                        freq_image = generated_sequence  # The full generated sequence
+                        complex_image = split_to_complex(freq_image)
+                        time_image = freq_to_time(complex_image)
 
-                    freq_image_vis = visualize_frequency_image(
-                        complex_image.abs().cpu().numpy()
-                    )
-                    time_image_vis = visualize_frequency_image(time_image.cpu().numpy())
+                        freq_image_vis = visualize_frequency_image(
+                            complex_image.abs().cpu().numpy()
+                        )
+                        time_image_vis = visualize_frequency_image(
+                            time_image.cpu().numpy()
+                        )
 
-                    # Log to Wandb
-                    trainer.logger.experiment.log(
-                        {
-                            f"ar_frequency_image_{sample_index}": wandb.Image(
-                                freq_image_vis, caption=f"Label: {random_label.item()}"
-                            ),
-                            f"ar_time_image_step_{sample_index}": wandb.Image(
-                                time_image_vis, caption=f"Label: {random_label.item()}"
-                            ),
-                        }
-                    )
+                        # Log to Wandb
+                        trainer.logger.experiment.log(
+                            {
+                                f"ar_frequency_image_{sample_index}_{i}": wandb.Image(
+                                    freq_image_vis,
+                                    caption=f"Label: {random_label.item()}",
+                                ),
+                                f"ar_time_image_step_{sample_index}_{i}": wandb.Image(
+                                    time_image_vis,
+                                    caption=f"Label: {random_label.item()}",
+                                ),
+                            }
+                        )
 
             trainer.model.train()
 
@@ -178,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_layers", type=int, default=2, help="Number of layers")
     parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
-    parser.add_argument("--max_epochs", type=int, default=10, help="Number of epochs")
+    parser.add_argument("--max_epochs", type=int, default=1000, help="Number of epochs")
     parser.add_argument(
         "--accelerator", type=str, default="gpu", help="Accelerator type"
     )
