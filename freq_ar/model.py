@@ -1,32 +1,6 @@
-import math
-
 import torch
 import torch.nn as nn
-
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, embed_dim, max_len=5000):
-        super().__init__()
-        encoding = torch.zeros(max_len, embed_dim)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, embed_dim, 2).float() * (-math.log(10000.0) / embed_dim)
-        )
-        encoding[:, 0::2] = torch.sin(position * div_term)
-        encoding[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("encoding", encoding, persistent=False)
-
-    def forward(self, x):
-        return x + self.encoding[: x.size(1), :]
-
-
-class LearnablePositionEncoding(nn.Module):
-    def __init__(self, embed_dim, max_len=5000):
-        super().__init__()
-        self.encoding = nn.Parameter(torch.randn(max_len, embed_dim))
-
-    def forward(self, x):
-        return x + self.encoding[: x.size(1), :]
+from transformers import LlamaModel, LlamaConfig
 
 
 class FrequencyARModel(nn.Module):
@@ -37,29 +11,17 @@ class FrequencyARModel(nn.Module):
         num_heads,
         num_layers,
         patchify,
-        pos_emb_type="learnable",
     ):
         super().__init__()
 
-        match pos_emb_type:
-            case "learnable":
-                self.positional_encoding = LearnablePositionEncoding(embed_dim)
-            case "fixed":
-                self.positional_encoding = PositionalEncoding(embed_dim)
-            case _:
-                raise ValueError(f"Unsupported pos_emb_type: {pos_emb_type}")
-
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(
-                d_model=embed_dim,
-                nhead=num_heads,
-                dim_feedforward=embed_dim * 4,
-                activation="gelu",
-                batch_first=True,
-                norm_first=True,
-            ),
-            num_layers=num_layers,
+        llama_config = LlamaConfig(
+            hidden_size=embed_dim,
+            num_attention_heads=num_heads,
+            num_hidden_layers=num_layers,
+            intermediate_size=embed_dim * 4,
+            use_cache=False,
         )
+        self.transformer = LlamaModel(llama_config)
 
         self.embed_first = nn.Linear(input_dim, embed_dim)
 
@@ -92,19 +54,8 @@ class FrequencyARModel(nn.Module):
         yy = self.embed_first(yy)
         x = torch.cat([yy, xx], dim=1)
 
-        # Apply positional encoding
-        x = self.positional_encoding(x)
-
-        causal_mask = nn.Transformer.generate_square_subsequent_mask(
-            x.size(1), device=x.device, dtype=torch.bool
-        )
-
-        # Apply transformer decoder with causal mask
-        x = self.transformer(
-            x,
-            mask=causal_mask,
-            is_causal=True,
-        )
+        # Apply LLaMA model
+        x = self.transformer(inputs_embeds=x).last_hidden_state
 
         # Apply output layers
         x = x.permute(0, 2, 1)

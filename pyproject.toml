@@ -12,6 +12,7 @@ dependencies = [
     "jsonargparse>=4.20.0",
     "wandb[media]>=0.19.8",
     "einops>=0.8.1",
+    "transformers>=4.50.0",
 ]
 
 [build-system]
