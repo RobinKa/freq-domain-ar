@@ -1,0 +1,22 @@
+[project]
+name = "freq-ar"
+version = "0.1.0"
+description = "Autoregressive prediction for images in the frequency domain"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "pytorch-lightning>=2.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "jsonargparse>=4.20.0",
+    "wandb>=0.19.8",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["freq_ar"]
+exclude = ["data", "lightning_logs"]
