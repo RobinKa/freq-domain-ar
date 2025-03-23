@@ -30,10 +30,25 @@ class LearnablePositionEncoding(nn.Module):
 
 
 class FrequencyARModel(nn.Module):
-    def __init__(self, input_dim, embed_dim, num_heads, num_layers, patchify):
+    def __init__(
+        self,
+        input_dim,
+        embed_dim,
+        num_heads,
+        num_layers,
+        patchify,
+        pos_emb_type="learnable",
+    ):
         super().__init__()
-        self.positional_encoding = PositionalEncoding(embed_dim)
-        # self.positional_encoding = LearnablePositionEncoding(embed_dim)
+
+        match pos_emb_type:
+            case "learnable":
+                self.positional_encoding = LearnablePositionEncoding(embed_dim)
+            case "fixed":
+                self.positional_encoding = PositionalEncoding(embed_dim)
+            case _:
+                raise ValueError(f"Unsupported pos_emb_type: {pos_emb_type}")
+
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 d_model=embed_dim,
