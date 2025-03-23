@@ -43,7 +43,7 @@ class FrequencyARTrainer(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
@@ -274,6 +274,7 @@ if __name__ == "__main__":
         accelerator=args.accelerator,
         devices=args.devices,
         logger=wandb_logger,
+        gradient_clip_val=0.1,
         callbacks=[
             image_logging_callback,
             autoregressive_sampling_callback,

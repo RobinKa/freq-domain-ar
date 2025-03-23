@@ -54,14 +54,14 @@ class FrequencyARModel(nn.Module):
                 d_model=embed_dim,
                 nhead=num_heads,
                 dim_feedforward=embed_dim * 4,
-                activation="relu",
+                activation="gelu",
                 batch_first=True,
+                norm_first=True,
             ),
             num_layers=num_layers,
         )
 
         self.embed_first = nn.Linear(input_dim, embed_dim)
-        self.unembed_first = nn.Linear(embed_dim, input_dim)
 
         self.patchify = nn.Conv1d(
             kernel_size=patchify,
