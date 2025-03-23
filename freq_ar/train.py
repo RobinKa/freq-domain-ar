@@ -128,10 +128,14 @@ class AutoRegressiveSamplingCallback(Callback):
                         1, 28 * 15, 2, device=pl_module.device
                     )  # Initialize an empty sequence
 
-                    for i in range(28 * 15):  # Generate pixel by pixel
+                    for i in range(0, 28 * 15, 15):  # Generate pixel by pixel
                         output = pl_module(generated_sequence, random_label)
-                        next_pixel = output[:, i]  # Take the next predicted pixel
-                        generated_sequence[:, i] = next_pixel  # Update the sequence
+                        next_pixel = output[
+                            :, i : i + 15
+                        ]  # Take the next predicted pixel
+                        generated_sequence[:, i : i + 15] = (
+                            next_pixel  # Update the sequence
+                        )
 
                     freq_image = generated_sequence  # The full generated sequence
                     complex_image = split_to_complex(freq_image)
