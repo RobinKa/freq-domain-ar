@@ -24,7 +24,4 @@ class FrequencyMNIST(torch.utils.data.Dataset):
         freq_image_imag = freq_image.imag
         freq_image = torch.stack((freq_image_real, freq_image_imag), dim=-1)
 
-        # Normalize the frequency image
-        freq_image = torch.log1p(freq_image)
-
         return freq_image.flatten(), label

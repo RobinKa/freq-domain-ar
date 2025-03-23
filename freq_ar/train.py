@@ -39,7 +39,6 @@ def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
 
 
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
-    freq_image = torch.expm1(freq_image)
     freq_image = freq_image.view(28, 28, 2)
     freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
     return freq_image_complex
