@@ -18,11 +18,11 @@ The current implementation uses mnist as a dataset. Note that no time was spent 
 
 ## Examples
 
-Below are some examples output where we autoregressively sample 15 pixels at a time (because that's the patchification size). The left part is the frequency domain
+Below are some examples output where we autoregressively sample 15 pixels at a time (because that's the patchification size). The left part is the frequency domain.
 
-https://github.com/user-attachments/assets/fa89a10c-37e8-4e99-af33-de4a3f1b9591
+https://github.com/user-attachments/assets/2c3d4b83-f5b8-499e-bcbd-0bc6cb524cf1
 
-https://github.com/user-attachments/assets/52956b9f-fe81-413b-a2d9-a2f97871bb92
+https://github.com/user-attachments/assets/697cae57-2faa-46a9-9966-c14fd63a3927
 
 ## How to run
 
