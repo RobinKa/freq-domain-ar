@@ -44,14 +44,25 @@ class FrequencyARTrainer(pl.LightningModule):
 
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
+    # Apply expm1 to complex freq_image's magnitude while keeping its angle
+    complex_image = torch.expm1(complex_image.abs()) * torch.exp(
+        1j * complex_image.angle()
+    )
+
     time_image = torch.fft.irfft2(complex_image).real
-    time_image = (time_image - time_image.min()) / (time_image.max() - time_image.min())
+    # time_image = (time_image - time_image.min()) / (time_image.max() - time_image.min())
     return time_image
 
 
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
     freq_image = freq_image.float().view(28, 15, 2)
     freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
+
+    # # Apply expm1 to complex freq_image's magnitude while keeping its angle
+    # freq_image_complex = torch.expm1(freq_image_complex.abs()) * torch.exp(
+    #     1j * freq_image_complex.angle()
+    # )
+
     return freq_image_complex
 
 
@@ -61,6 +72,8 @@ class ImageLoggingCallback(Callback):
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if trainer.global_step % self.log_every_n_steps == 0:
+            trainer.model.eval()
+
             x, y = batch  # Extract a sample from the batch
             with torch.no_grad():
                 freq_image = pl_module(
@@ -102,6 +115,8 @@ class ImageLoggingCallback(Callback):
                 }
             )
 
+            trainer.model.train()
+
 
 class AutoRegressiveSamplingCallback(Callback):
     def __init__(self, num_samples, log_every_n_steps=250):  # Default to 250 steps
@@ -110,6 +125,8 @@ class AutoRegressiveSamplingCallback(Callback):
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if trainer.global_step % self.log_every_n_steps == 0:
+            trainer.model.eval()
+
             with torch.no_grad():
                 for sample_index in range(self.num_samples):
                     random_label = torch.randint(0, 10, (1,), device=pl_module.device)
@@ -142,6 +159,8 @@ class AutoRegressiveSamplingCallback(Callback):
                             ),
                         }
                     )
+
+            trainer.model.train()
 
 
 if __name__ == "__main__":

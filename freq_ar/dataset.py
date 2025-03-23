@@ -22,6 +22,12 @@ class FrequencyMNIST(torch.utils.data.Dataset):
 
         # Convert image to frequency domain using FFT
         freq_image = torch.fft.rfft2(image.squeeze())
+
+        # Apply log1p to complex freq_image's magnitude while keeping its angle
+        freq_image = torch.log1p(torch.abs(freq_image)) * torch.exp(
+            1j * torch.angle(freq_image)
+        )
+
         freq_image_real = freq_image.real
         freq_image_imag = freq_image.imag
         freq_image = torch.stack((freq_image_real, freq_image_imag), dim=-1)
