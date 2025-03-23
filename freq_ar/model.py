@@ -27,8 +27,8 @@ class FrequencyARModel(nn.Module):
         super().__init__()
         self.embedding = nn.Linear(input_dim, embed_dim)
         self.positional_encoding = PositionalEncoding(embed_dim)
-        self.decoder = nn.TransformerDecoder(
-            nn.TransformerDecoderLayer(
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
                 d_model=embed_dim,
                 nhead=num_heads,
                 dim_feedforward=embed_dim * 4,
@@ -52,18 +52,15 @@ class FrequencyARModel(nn.Module):
             x, "b s e -> s b e"
         )  # (batch_size, seq_len, embed_dim) -> (seq_len, batch_size, embed_dim)
 
-        # Create causal mask
-        seq_len = x.size(0)
-        causal_mask = (
-            torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool().to(x.device)
+        causal_mask = nn.Transformer.generate_square_subsequent_mask(
+            x.size(0), device=x.device, dtype=torch.bool
         )
 
         # Apply transformer decoder with causal mask
-        x = self.decoder(
-            tgt=x,
-            tgt_is_causal=True,
-            tgt_mask=causal_mask,
-            memory=x,
+        x = self.transformer(
+            x,
+            mask=causal_mask,
+            is_causal=True,
         )  # Use x as both tgt and memory
 
         # Reshape back to (batch_size, seq_len, embed_dim)

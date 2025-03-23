@@ -29,6 +29,7 @@ class FrequencyARTrainer(pl.LightningModule):
 
         x = torch.cat([label_tensor, x], dim=1)  # Concatenate label with input
         output = self.model(x)
+        assert output.shape[1:] == (28 * 28 + 1, 2), output.shape
         return output[:, 1:]  # Remove the label from the output
 
     def training_step(self, batch, batch_idx):
