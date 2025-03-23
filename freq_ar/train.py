@@ -111,7 +111,7 @@ class AutoRegressiveSamplingCallback(Callback):
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if trainer.global_step % self.log_every_n_steps == 0:
             with torch.no_grad():
-                for _ in range(self.num_samples):
+                for sample_index in range(self.num_samples):
                     random_label = torch.randint(0, 10, (1,), device=pl_module.device)
                     generated_sequence = torch.zeros(
                         1, 28 * 28, 2, device=pl_module.device
@@ -134,10 +134,10 @@ class AutoRegressiveSamplingCallback(Callback):
                     # Log to Wandb
                     trainer.logger.experiment.log(
                         {
-                            f"ar_frequency_image_step_{trainer.global_step}": wandb.Image(
+                            f"ar_frequency_image_{sample_index}": wandb.Image(
                                 freq_image_vis, caption=f"Label: {random_label.item()}"
                             ),
-                            f"ar_time_image_step_{trainer.global_step}": wandb.Image(
+                            f"ar_time_image_step_{sample_index}": wandb.Image(
                                 time_image_vis, caption=f"Label: {random_label.item()}"
                             ),
                         }
@@ -157,7 +157,7 @@ if __name__ == "__main__":
         "--num_heads", type=int, default=4, help="Number of attention heads"
     )
     parser.add_argument("--num_layers", type=int, default=2, help="Number of layers")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--max_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument(
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     )  # Initialize callback
 
     autoregressive_sampling_callback = AutoRegressiveSamplingCallback(
-        num_samples=5, log_every_n_steps=args.log_every_n_steps
+        num_samples=1, log_every_n_steps=args.log_every_n_steps
     )  # Initialize autoregressive sampling callback
 
     trainer = pl.Trainer(
