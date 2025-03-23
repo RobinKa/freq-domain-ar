@@ -21,11 +21,11 @@ class FrequencyMNIST(torch.utils.data.Dataset):
         image, label = self.dataset[idx]
 
         # Convert image to frequency domain using FFT
-        freq_image = torch.fft.fft2(image.squeeze())
+        freq_image = torch.fft.rfft2(image.squeeze())
         freq_image_real = freq_image.real
         freq_image_imag = freq_image.imag
         freq_image = torch.stack((freq_image_real, freq_image_imag), dim=-1)
-        assert freq_image.shape == (28, 28, 2)
+        assert freq_image.shape == (28, 15, 2), freq_image.shape
 
         freq_image = rearrange(
             freq_image.to(dtype=self.image_dtype), "h w c -> (h w) c"

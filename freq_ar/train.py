@@ -25,11 +25,11 @@ class FrequencyARTrainer(pl.LightningModule):
     def forward(self, x, label):
         # convert label from B to B 1 2 (repeated across last dim)
         label_tensor = repeat(label.to(dtype=x.dtype) / 9, "B -> B 1 2")
-        assert x.shape[1:] == (28 * 28, 2)
+        assert x.shape[1:] == (28 * 15, 2)
 
         x = torch.cat([label_tensor, x], dim=1)  # Concatenate label with input
         output = self.model(x)
-        assert output.shape[1:] == (28 * 28 + 1, 2), output.shape
+        assert output.shape[1:] == (28 * 15 + 1, 2), output.shape
         return output[:, 1:]  # Remove the label from the output
 
     def training_step(self, batch, batch_idx):
@@ -44,13 +44,13 @@ class FrequencyARTrainer(pl.LightningModule):
 
 
 def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
-    time_image = torch.fft.ifft2(complex_image).real
+    time_image = torch.fft.irfft2(complex_image).real
     time_image = (time_image - time_image.min()) / (time_image.max() - time_image.min())
     return time_image
 
 
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
-    freq_image = freq_image.float().view(28, 28, 2)
+    freq_image = freq_image.float().view(28, 15, 2)
     freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
     return freq_image_complex
 
@@ -114,10 +114,10 @@ class AutoRegressiveSamplingCallback(Callback):
                 for sample_index in range(self.num_samples):
                     random_label = torch.randint(0, 10, (1,), device=pl_module.device)
                     generated_sequence = torch.zeros(
-                        1, 28 * 28, 2, device=pl_module.device
+                        1, 28 * 15, 2, device=pl_module.device
                     )  # Initialize an empty sequence
 
-                    for i in range(28 * 28):  # Generate pixel by pixel
+                    for i in range(28 * 15):  # Generate pixel by pixel
                         output = pl_module(generated_sequence, random_label)
                         next_pixel = output[:, i]  # Take the next predicted pixel
                         generated_sequence[:, i] = next_pixel  # Update the sequence
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", action=ActionConfigFile)
     parser.add_argument("--input_dim", type=int, default=2, help="Input dimension")
     parser.add_argument(
-        "--embed_dim", type=int, default=128, help="Embedding dimension"
+        "--embed_dim", type=int, default=512, help="Embedding dimension"
     )
     parser.add_argument(
         "--num_heads", type=int, default=4, help="Number of attention heads"
