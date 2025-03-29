@@ -54,6 +54,12 @@ class FrequencyARTrainer(pl.LightningModule):
         image, label = batch
         orig_image_shape = image.shape
         image = rearrange(image, "... h w c -> ... (h w) c")
+
+        # Randomly replace 10% of the labels with 10
+        label = label.clone()
+        random_indices = torch.randperm(label.size(0))[: int(0.1 * label.size(0))]
+        label[random_indices] = 10
+
         predicted_image = self(image, label)
 
         # Ignore first patch for loss by copying it
@@ -168,7 +174,8 @@ class AutoRegressiveSamplingCallback(Callback):
             dtype = batch[0].dtype
 
             with torch.no_grad():
-                for sample_index in range(self.num_samples):
+                # for sample_index in range(self.num_samples):
+                for sample_index, cfg_scale in enumerate([0.0, 1.0, 2.0, 3.0]):
                     # B
                     # label = torch.randint(0, 10, (1,), device=pl_module.device)
                     label = batch[1][:1]
@@ -195,7 +202,14 @@ class AutoRegressiveSamplingCallback(Callback):
 
                     # Generate one patch at a time
                     for i in range(self.patchify, height * width, self.patchify):
-                        output = pl_module(generated_sequence, label)
+                        output_cond = pl_module(generated_sequence, label)
+                        output_uncond = pl_module(
+                            generated_sequence, torch.full_like(label, 10)
+                        )
+                        # CFG
+                        output = output_uncond + cfg_scale * (
+                            output_cond - output_uncond
+                        )
 
                         # Update the sequence with the generated patch
                         next_pixels = output[:, i : i + self.patchify]
