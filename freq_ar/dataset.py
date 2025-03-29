@@ -44,13 +44,17 @@ def unsort_by_frequency(sorted_freq_image):
     )
 
 
-def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
+def freq_to_time(complex_image: torch.Tensor, sigmoid: bool = False) -> torch.Tensor:
     # Apply expm1 to complex freq_image's magnitude while keeping its angle
     complex_image = torch.expm1(complex_image.abs()) * torch.exp(
         1j * complex_image.angle()
     )
 
     time_image = torch.fft.irfft2(complex_image).real
+
+    if sigmoid:
+        time_image = torch.tanh(time_image) ** 2
+
     return time_image
 
 
@@ -75,6 +79,8 @@ class FrequencyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         image, label = self.dataset[idx]  # CHW
+
+        # image = torch.special.logit(image)  # inverse of sigmoid
 
         # Convert image to frequency domain using FFT
         freq_image = torch.fft.rfft2(image)

@@ -52,11 +52,22 @@ class FrequencyARTrainer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         image, label = batch
+        orig_image_shape = image.shape
         image = rearrange(image, "... h w c -> ... (h w) c")
         predicted_image = self(image, label)
-        loss = self.loss_fn(
-            predicted_image[..., self.patchify :, :], image[..., self.patchify :, :]
+
+        # Ignore first patch for loss by copying it
+        predicted_image[..., : self.patchify, :] = image[..., : self.patchify, :]
+        # loss = self.loss_fn(
+        #     predicted_image[..., self.patchify :, :], image[..., self.patchify :, :]
+        # )
+
+        predicted_time_image = freq_to_time(
+            split_to_complex(predicted_image.reshape(orig_image_shape)), sigmoid=False
         )
+        time_image = freq_to_time(split_to_complex(image.reshape(orig_image_shape)))
+
+        loss = self.loss_fn(predicted_time_image, time_image.detach())
         self.log("train_loss", loss)
         return loss
 
@@ -91,42 +102,45 @@ class ImageLoggingCallback(Callback):
                     w=batch_image.shape[-2],
                 )
 
-            complex_image = split_to_complex(freq_image)
-            time_image = freq_to_time(complex_image)
-            freq_image_vis = render_complex_image(
-                complex_image.abs().cpu().numpy(), normalize=True
-            )
-            time_image_vis = render_complex_image(time_image.cpu().numpy(), clip=True)
+                complex_image = split_to_complex(freq_image)
+                time_image = freq_to_time(complex_image, sigmoid=False)
+                freq_image_vis = render_complex_image(
+                    complex_image.abs().cpu().numpy(), normalize=True
+                )
+                time_image_vis = render_complex_image(
+                    time_image.cpu().numpy(), clip=True
+                )
 
-            input_complex_image = split_to_complex(batch_image[0])
-            input_time_image = freq_to_time(input_complex_image)
-            input_image_vis = render_complex_image(
-                input_complex_image.abs().cpu().numpy(), normalize=True
-            )
-            input_time_image_vis = render_complex_image(
-                input_time_image.cpu().numpy(), clip=True
-            )
+                input_complex_image = split_to_complex(batch_image[0])
+                input_time_image = freq_to_time(input_complex_image)
+                input_image_vis = render_complex_image(
+                    input_complex_image.abs().cpu().numpy(), normalize=True
+                )
+                input_time_image_vis = render_complex_image(
+                    input_time_image.cpu().numpy(), clip=True
+                )
 
-            # Log to Wandb
-            trainer.logger.experiment.log(
-                {
-                    "frequency_image": wandb.Image(
-                        freq_image_vis, caption=f"Label: {batch_label[0].item()}"
-                    ),
-                    "time_image": wandb.Image(
-                        time_image_vis, caption=f"Label: {batch_label[0].item()}"
-                    ),
-                    "input_image": wandb.Image(
-                        input_image_vis, caption=f"Label: {batch_label[0].item()}"
-                    ),
-                    "input_time_image": wandb.Image(
-                        input_time_image_vis, caption=f"Label: {batch_label[0].item()}"
-                    ),
-                    "ground_truth": batch_label[
-                        0
-                    ].item(),  # Log ground truth as a scalar value
-                }
-            )
+                # Log to Wandb
+                trainer.logger.experiment.log(
+                    {
+                        "frequency_image": wandb.Image(
+                            freq_image_vis, caption=f"Label: {batch_label[0].item()}"
+                        ),
+                        "time_image": wandb.Image(
+                            time_image_vis, caption=f"Label: {batch_label[0].item()}"
+                        ),
+                        "input_image": wandb.Image(
+                            input_image_vis, caption=f"Label: {batch_label[0].item()}"
+                        ),
+                        "input_time_image": wandb.Image(
+                            input_time_image_vis,
+                            caption=f"Label: {batch_label[0].item()}",
+                        ),
+                        "ground_truth": batch_label[
+                            0
+                        ].item(),  # Log ground truth as a scalar value
+                    }
+                )
 
             trainer.model.train()
 
@@ -156,7 +170,8 @@ class AutoRegressiveSamplingCallback(Callback):
             with torch.no_grad():
                 for sample_index in range(self.num_samples):
                     # B
-                    label = torch.randint(0, 10, (1,), device=pl_module.device)
+                    # label = torch.randint(0, 10, (1,), device=pl_module.device)
+                    label = batch[1][:1]
 
                     # BHWC
                     generated_sequence = torch.zeros(
@@ -189,7 +204,7 @@ class AutoRegressiveSamplingCallback(Callback):
                         # Record results for visualization
                         freq_image = generated_sequence.reshape(height, width, channels)
                         complex_image = split_to_complex(freq_image)
-                        time_image = freq_to_time(complex_image)
+                        time_image = freq_to_time(complex_image, sigmoid=False)
                         freq_images.append(
                             render_complex_image(
                                 complex_image.abs().cpu().numpy(), normalize=True
