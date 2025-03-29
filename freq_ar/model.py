@@ -12,6 +12,7 @@ class FrequencyARModel(nn.Module):
         num_heads: int,
         num_layers: int,
         patchify: int,
+        label_count: int = 10,
     ):
         super().__init__()
 
@@ -24,7 +25,7 @@ class FrequencyARModel(nn.Module):
         )
         self.transformer = LlamaModel(llama_config)
 
-        self.embed_label = nn.Linear(input_dim, embed_dim)
+        self.embed_label = nn.Embedding(label_count, embed_dim)
         self.embed_image = nn.Conv1d(
             kernel_size=patchify,
             stride=patchify,
@@ -38,28 +39,30 @@ class FrequencyARModel(nn.Module):
             out_channels=input_dim,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
         assert x.ndim >= 2  # ...SC
+        assert label.ndim == x.ndim - 2
 
-        # Keep track of original shape because we want to reshape back to it in the end
+        # Keep track of original shape because we want to reshape back to it in the end.
+        # Add 1 to the sequence dimension to account for the label.
         orig_shape = x.shape
 
         # Flatten batch dimension
         x = rearrange(x, "... s c -> (...) s c")
-
-        orig_seq_len = x.shape[1]
+        label = rearrange(label, "... -> (...)")
+        orig_seq_len = x.shape[1] + 1  # image + label
 
         # Apply input layers
-        # Embed label
-        label = x[:, :1]
-        label = self.embed_label(label)
+        # Embed label (B -> BC -> B1C)
+        label = self.embed_label(label).unsqueeze(1)
+
         # Embed image
-        image = x[:, 1:]
-        image = image.permute(0, 2, 1)
-        image = self.embed_image(image)
-        image = image.permute(0, 2, 1)
-        x = torch.cat([label, image], dim=1)
-        del image, label
+        x = x.permute(0, 2, 1)
+        x = self.embed_image(x)
+        x = x.permute(0, 2, 1)
+        # Combine label and image
+        x = torch.cat([label, x], dim=1)
+        del label
 
         # Apply LLaMA model
         x = self.transformer(inputs_embeds=x).last_hidden_state
@@ -74,6 +77,10 @@ class FrequencyARModel(nn.Module):
         # Remove the excess.
         x = x[..., :orig_seq_len, :]
 
-        x = x.reshape(*orig_shape)
+        x = x.reshape(
+            *orig_shape[:-2],
+            orig_seq_len,
+            x.shape[-1],
+        )
 
         return x

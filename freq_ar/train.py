@@ -39,20 +39,10 @@ class FrequencyARTrainer(pl.LightningModule):
         self.model = torch.compile(model, fullgraph=True) if compile_model else model
 
     def forward(self, x, label):
-        # Broadcast label across sequence dimension and repeat it across channels
-        # so we can concatenate it with the image.
-        label_tensor = repeat(
-            label.to(dtype=x.dtype) / 9, "... -> ... 1 c", c=x.shape[-1]
-        )
-        del label
+        x = self.model(x, label)
 
-        # Concatenate label and image
-        x = torch.cat([label_tensor, x], dim=1)
-        del label_tensor
-
-        x = self.model(x)
-
-        # Remove the last token prediction
+        # The first output is for the label, so we have HW+1 tokens.
+        # Remove the last token prediction.
         x = x[..., :-1, :]
 
         return x
