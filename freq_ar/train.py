@@ -96,14 +96,16 @@ class ImageLoggingCallback(Callback):
             freq_image_vis = render_complex_image(
                 complex_image.abs().cpu().numpy(), normalize=True
             )
-            time_image_vis = render_complex_image(time_image.cpu().numpy())
+            time_image_vis = render_complex_image(time_image.cpu().numpy(), clip=True)
 
             input_complex_image = split_to_complex(batch_image[0])
             input_time_image = freq_to_time(input_complex_image)
             input_image_vis = render_complex_image(
                 input_complex_image.abs().cpu().numpy(), normalize=True
             )
-            input_time_image_vis = render_complex_image(input_time_image.cpu().numpy())
+            input_time_image_vis = render_complex_image(
+                input_time_image.cpu().numpy(), clip=True
+            )
 
             # Log to Wandb
             trainer.logger.experiment.log(
@@ -181,7 +183,7 @@ class AutoRegressiveSamplingCallback(Callback):
                             )
                         )
                         time_images.append(
-                            render_complex_image(time_image.cpu().numpy())
+                            render_complex_image(time_image.cpu().numpy(), clip=True)
                         )
 
                     # Create videos, TCHW

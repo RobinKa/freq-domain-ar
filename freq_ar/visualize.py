@@ -7,13 +7,14 @@ from PIL import Image
 
 
 def render_complex_image(
-    complex_image: np.ndarray, normalize: bool = False
+    complex_image: np.ndarray, normalize: bool = False, clip: bool = False
 ) -> Image.Image:
     """
     Visualizes a complex image and returns it as a PIL Image.
 
     freq_image: complex CHW
     normalize: if true, scale the image to [0, 1] range
+    clip: if true, clip the image to [0, 1] range
     """
     assert complex_image.ndim in {2, 3}, (
         f"freq_image must be 2D or 3D but was {complex_image.ndim}: {complex_image.shape}"
@@ -27,6 +28,10 @@ def render_complex_image(
         complex_image = (complex_image - np.min(complex_image)) / (
             np.max(complex_image) - np.min(complex_image)
         )
+
+    if clip:
+        # Clip the image to the range [0, 1]
+        complex_image = np.clip(complex_image, 0, 1)
 
     plt.figure(figsize=(4, 4))
     plt.imshow(complex_image, cmap="gray" if complex_image.ndim == 2 else "jet")
