@@ -50,6 +50,12 @@ class FrequencyARTrainer(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         image, label = batch
         image = rearrange(image, "... h w c -> ... (h w) c")
+
+        # Randomly replace 10% of the labels with 10 so we can do cfg in inference
+        label = label.clone()
+        random_indices = torch.randperm(label.size(0))[: int(0.1 * label.size(0))]
+        label[random_indices] = 10
+
         predicted_image = self(image, label)
         loss = self.loss_fn(predicted_image, image)
         self.log("train_loss", loss)
@@ -123,9 +129,9 @@ class ImageLoggingCallback(Callback):
 
 class AutoRegressiveSamplingCallback(Callback):
     def __init__(
-        self, num_samples: int, patchify: int, log_every_n_steps: int = 250
+        self, cfg_scales: list[float], patchify: int, log_every_n_steps: int = 250
     ):  # Default to 250 steps
-        self.num_samples = num_samples
+        self.cfg_scales = cfg_scales
         self.patchify = patchify
         self.log_every_n_steps = log_every_n_steps
 
@@ -144,10 +150,10 @@ class AutoRegressiveSamplingCallback(Callback):
             dtype = batch[0].dtype
 
             with torch.no_grad():
-                for sample_index in range(self.num_samples):
-                    # B
-                    label = torch.randint(0, 10, (1,), device=pl_module.device)
+                # B
+                label = torch.randint(0, 10, (1,), device=pl_module.device)
 
+                for cfg_scale in self.cfg_scales:
                     # BHWC
                     generated_sequence = torch.zeros(
                         1,
@@ -162,7 +168,14 @@ class AutoRegressiveSamplingCallback(Callback):
 
                     # Generate one patch at a time
                     for i in range(0, height * width, self.patchify):
-                        output = pl_module(generated_sequence, label)
+                        output_cond = pl_module(generated_sequence, label)
+                        output_uncond = pl_module(
+                            generated_sequence, torch.full_like(label, 10)
+                        )
+                        # CFG
+                        output = output_uncond + cfg_scale * (
+                            output_cond - output_uncond
+                        )
 
                         # Update the sequence with the generated patch
                         next_pixels = output[:, i : i + self.patchify]
@@ -191,7 +204,7 @@ class AutoRegressiveSamplingCallback(Callback):
                     # Log videos to Wandb
                     trainer.logger.experiment.log(
                         {
-                            f"ar_video_{sample_index}": wandb.Video(
+                            f"ar_video_cfg={cfg_scale}": wandb.Video(
                                 freq_and_time_video,
                                 fps=5,
                                 format="mp4",
@@ -227,7 +240,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--run_name", type=str, default=None, help="Wandb run name")
     parser.add_argument(
-        "--log_every_n_steps", type=int, default=1000, help="Log images every n steps"
+        "--log_every_n_steps", type=int, default=2000, help="Log images every n steps"
     )
     parser.add_argument(
         "--image_dtype",
@@ -292,7 +305,9 @@ if __name__ == "__main__":
     )
 
     autoregressive_sampling_callback = AutoRegressiveSamplingCallback(
-        num_samples=1, patchify=args.patchify, log_every_n_steps=args.log_every_n_steps
+        cfg_scales=[0.0, 1.0, 2.0, 3.0],
+        patchify=args.patchify,
+        log_every_n_steps=args.log_every_n_steps,
     )
 
     trainer = pl.Trainer(

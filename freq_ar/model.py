@@ -12,7 +12,7 @@ class FrequencyARModel(nn.Module):
         num_heads: int,
         num_layers: int,
         patchify: int,
-        label_count: int = 10,
+        label_count: int = 11,
     ):
         super().__init__()
 
