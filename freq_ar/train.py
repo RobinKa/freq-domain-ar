@@ -33,10 +33,13 @@ class FrequencyARTrainer(pl.LightningModule):
 
         self.loss_fn = torch.nn.MSELoss()
         self.learning_rate = learning_rate
+        self.patchify = patchify
 
         model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers, patchify)
         # Conditionally compile the model
         self.model = torch.compile(model, fullgraph=True) if compile_model else model
+
+        self.save_hyperparameters()
 
     def forward(self, x, label):
         x = self.model(x, label)
@@ -51,7 +54,9 @@ class FrequencyARTrainer(pl.LightningModule):
         image, label = batch
         image = rearrange(image, "... h w c -> ... (h w) c")
         predicted_image = self(image, label)
-        loss = self.loss_fn(predicted_image, image)
+        loss = self.loss_fn(
+            predicted_image[..., self.patchify :, :], image[..., self.patchify :, :]
+        )
         self.log("train_loss", loss)
         return loss
 
@@ -60,7 +65,8 @@ class FrequencyARTrainer(pl.LightningModule):
 
 
 class ImageLoggingCallback(Callback):
-    def __init__(self, log_every_n_steps):
+    def __init__(self, patchify: int, log_every_n_steps: int):
+        self.patchify = patchify
         self.log_every_n_steps = log_every_n_steps
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
@@ -69,11 +75,15 @@ class ImageLoggingCallback(Callback):
 
             # Run a single sample through the model BHW(2C)
             batch_image, batch_label = batch
+            flat_batch_image = rearrange(batch_image[:1], "... h w c -> ... (h w) c")
             with torch.no_grad():
-                freq_image = pl_module(
-                    rearrange(batch_image[:1], "... h w c -> ... (h w) c"),
-                    batch_label[:1],
-                )[0]
+                freq_image = pl_module(flat_batch_image, batch_label[:1])[0]
+
+                # Replace the first patch with the original image
+                freq_image[..., : self.patchify, :] = flat_batch_image[
+                    0, ..., : self.patchify, :
+                ]
+
                 freq_image = rearrange(
                     freq_image,
                     "... (h w) c -> ... h w c",
@@ -157,11 +167,19 @@ class AutoRegressiveSamplingCallback(Callback):
                         dtype=dtype,
                     )
 
+                    # Fill in first patch with data
+                    batch_item_reshaped = rearrange(
+                        batch[0][:1], "... h w c -> ... (h w) c"
+                    )
+                    generated_sequence[:, : self.patchify] = batch_item_reshaped[
+                        :, : self.patchify
+                    ]
+
                     freq_images = []
                     time_images = []
 
                     # Generate one patch at a time
-                    for i in range(0, height * width, self.patchify):
+                    for i in range(self.patchify, height * width, self.patchify):
                         output = pl_module(generated_sequence, label)
 
                         # Update the sequence with the generated patch
@@ -288,7 +306,7 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(project=args.project_name, name=args.run_name)
 
     image_logging_callback = ImageLoggingCallback(
-        log_every_n_steps=args.log_every_n_steps
+        patchify=args.patchify, log_every_n_steps=args.log_every_n_steps
     )
 
     autoregressive_sampling_callback = AutoRegressiveSamplingCallback(
