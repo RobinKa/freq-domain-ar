@@ -8,7 +8,12 @@ from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
 import wandb
-from freq_ar.dataset import FrequencyMNIST, freq_to_time, split_to_complex
+from freq_ar.dataset import (
+    FrequencyCIFAR10,
+    FrequencyMNIST,
+    freq_to_time,
+    split_to_complex,
+)
 from freq_ar.model import FrequencyARModel
 from freq_ar.visualize import render_complex_image
 
@@ -88,13 +93,15 @@ class ImageLoggingCallback(Callback):
 
             complex_image = split_to_complex(freq_image)
             time_image = freq_to_time(complex_image)
-            freq_image_vis = render_complex_image(complex_image.abs().cpu().numpy())
+            freq_image_vis = render_complex_image(
+                complex_image.abs().cpu().numpy(), normalize=True
+            )
             time_image_vis = render_complex_image(time_image.cpu().numpy())
 
             input_complex_image = split_to_complex(batch_image[0])
             input_time_image = freq_to_time(input_complex_image)
             input_image_vis = render_complex_image(
-                input_complex_image.abs().cpu().numpy()
+                input_complex_image.abs().cpu().numpy(), normalize=True
             )
             input_time_image_vis = render_complex_image(input_time_image.cpu().numpy())
 
@@ -124,7 +131,7 @@ class ImageLoggingCallback(Callback):
 
 class AutoRegressiveSamplingCallback(Callback):
     def __init__(
-        self, num_samples, patchify, log_every_n_steps=250
+        self, num_samples: int, patchify: int, log_every_n_steps: int = 250
     ):  # Default to 250 steps
         self.num_samples = num_samples
         self.patchify = patchify
@@ -134,13 +141,14 @@ class AutoRegressiveSamplingCallback(Callback):
     def create_video(images):
         """Create a video from a list of images."""
         video = np.array([np.array(image) for image in images])
-        # THWC -> TCHW
-        video = np.transpose(video, (0, 3, 1, 2))
+        video = rearrange(video, "t h w c -> t c h w")
         return video
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if trainer.global_step % self.log_every_n_steps == 0:
             trainer.model.eval()
+
+            height, width, channels = batch[0].shape[-3:]
 
             with torch.no_grad():
                 for sample_index in range(self.num_samples):
@@ -149,29 +157,28 @@ class AutoRegressiveSamplingCallback(Callback):
 
                     # BHWC
                     generated_sequence = torch.zeros(
-                        1, 28 * 15, 2, device=pl_module.device
+                        1, height * width, channels, device=pl_module.device
                     )
 
                     freq_images = []
                     time_images = []
 
-                    for i in range(
-                        0, 28 * 15, self.patchify
-                    ):  # Generate pixel by pixel
+                    # Generate one patch at a time
+                    for i in range(0, height * width, self.patchify):
                         output = pl_module(generated_sequence, label)
-                        next_pixels = output[
-                            :, i : i + self.patchify
-                        ]  # Take the next predicted pixels
-                        generated_sequence[:, i : i + self.patchify] = (
-                            next_pixels  # Update the sequence
-                        )
 
-                        freq_image = generated_sequence.reshape(28, 15, 2)
+                        # Update the sequence with the generated patch
+                        next_pixels = output[:, i : i + self.patchify]
+                        generated_sequence[:, i : i + self.patchify] = next_pixels
+
+                        # Record results for visualization
+                        freq_image = generated_sequence.reshape(height, width, channels)
                         complex_image = split_to_complex(freq_image)
                         time_image = freq_to_time(complex_image)
-
                         freq_images.append(
-                            render_complex_image(complex_image.abs().cpu().numpy())
+                            render_complex_image(
+                                complex_image.abs().cpu().numpy(), normalize=True
+                            )
                         )
                         time_images.append(
                             render_complex_image(time_image.cpu().numpy())
@@ -204,7 +211,6 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument("--config", action=ActionConfigFile)
-    parser.add_argument("--input_dim", type=int, default=2, help="Input dimension")
     parser.add_argument(
         "--embed_dim", type=int, default=768, help="Embedding dimension"
     )
@@ -243,12 +249,28 @@ if __name__ == "__main__":
         default=15,
         help="Patchify the input image for the transformer",
     )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="MNIST",
+        choices=["MNIST", "CIFAR10"],
+        help="Dataset to use",
+    )
 
     args = parser.parse_args()
 
     image_dtype = getattr(torch, args.image_dtype)
 
-    train_dataset = FrequencyMNIST(train=True, image_dtype=image_dtype)
+    match args.dataset:
+        case "MNIST":
+            train_dataset = FrequencyMNIST(train=True, image_dtype=image_dtype)
+            input_dim = 2
+        case "CIFAR10":
+            train_dataset = FrequencyCIFAR10(train=True, image_dtype=image_dtype)
+            input_dim = 6
+        case _:
+            raise ValueError(f"Unknown dataset: {args.dataset}")
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
@@ -257,7 +279,7 @@ if __name__ == "__main__":
     )
 
     model = FrequencyARTrainer(
-        input_dim=args.input_dim,
+        input_dim=input_dim,
         embed_dim=args.embed_dim,
         num_heads=args.num_heads,
         num_layers=args.num_layers,
