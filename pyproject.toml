@@ -22,3 +22,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["freq_ar"]
 exclude = ["data", "lightning_logs"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]

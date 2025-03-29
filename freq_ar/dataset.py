@@ -17,7 +17,7 @@ def get_frequency_sorting_index():
 def sort_by_frequency(freq_image):
     # Sort the image by frequency from low to high.
     sort_idx = get_frequency_sorting_index()
-    return freq_image.view(-1)[sort_idx].view(28, 15)
+    return freq_image.view(-1)[sort_idx].view(*freq_image.shape)
 
 
 def unsort_by_frequency(sorted_freq_image):
@@ -27,7 +27,7 @@ def unsort_by_frequency(sorted_freq_image):
     # Compute the inverse permutation.
     unsort_idx = torch.argsort(sort_idx)
     # Reorder the sorted image back to its original order.
-    return sorted_freq_image.view(-1)[unsort_idx].view(28, 15)
+    return sorted_freq_image.view(-1)[unsort_idx].view(*sorted_freq_image.shape)
 
 
 class FrequencyMNIST(torch.utils.data.Dataset):
