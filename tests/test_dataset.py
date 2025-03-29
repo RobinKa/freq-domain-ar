@@ -1,7 +1,12 @@
 import pytest
 import torch
 
-from freq_ar.dataset import FrequencyMNIST, sort_by_frequency, unsort_by_frequency
+from freq_ar.dataset import (
+    FrequencyCIFAR10,
+    FrequencyMNIST,
+    sort_by_frequency,
+    unsort_by_frequency,
+)
 
 
 @pytest.mark.parametrize(
@@ -21,14 +26,15 @@ def test_sort_unsort_frequency(device: str):
     )
 
 
+@pytest.mark.parametrize("dataset_class", [FrequencyMNIST, FrequencyCIFAR10])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.bfloat16])
-def test_mnist_is_iterable(dtype: torch.dtype):
-    dataset = FrequencyMNIST(train=True, image_dtype=dtype)
+def test_datasets_are_iterable(dataset_class, dtype: torch.dtype):
+    dataset = dataset_class(train=True, image_dtype=dtype)
     for idx, (freq_image, label) in enumerate(dataset):
         assert freq_image is not None, "Frequency image should not be None"
         assert label is not None, "Label should not be None"
 
-        assert freq_image.ndim == 2  # (HW)(C2)
+        assert freq_image.ndim == 3  # HW(2C)
         assert freq_image.dtype == dtype
         assert freq_image.device.type == "cpu"
 

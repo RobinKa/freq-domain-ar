@@ -1,69 +1,71 @@
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from einops import repeat
+from einops import rearrange, repeat
 from jsonargparse import ActionConfigFile, ArgumentParser
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 
 import wandb
-from freq_ar.dataset import FrequencyMNIST, unsort_by_frequency
+from freq_ar.dataset import FrequencyMNIST, freq_to_time, split_to_complex
 from freq_ar.model import FrequencyARModel
 from freq_ar.visualize import visualize_frequency_image
 
 
 class FrequencyARTrainer(pl.LightningModule):
     def __init__(
-        self, input_dim, embed_dim, num_heads, num_layers, patchify, lr, compile_model
+        self,
+        input_dim: int,
+        embed_dim: int,
+        num_heads: int,
+        num_layers: int,
+        patchify: int,
+        learning_rate: float,
+        compile_model: bool,
     ):
         super().__init__()
-        model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers, patchify)
-        self.model = (
-            torch.compile(model, fullgraph=True) if compile_model else model
-        )  # Conditionally compile the model
+
         self.loss_fn = torch.nn.MSELoss()
-        self.lr = lr
+        self.learning_rate = learning_rate
+
+        model = FrequencyARModel(input_dim, embed_dim, num_heads, num_layers, patchify)
+        # Conditionally compile the model
+        self.model = torch.compile(model, fullgraph=True) if compile_model else model
 
     def forward(self, x, label):
-        # convert label from B to B 1 2 (repeated across last dim)
-        label_tensor = repeat(label.to(dtype=x.dtype) / 9, "B -> B 1 2")
-        assert x.shape[1:] == (28 * 15, 2)
+        # Broadcast label across sequence dimension and repeat it across channels
+        # so we can concatenate it with the image.
+        label_tensor = repeat(
+            label.to(dtype=x.dtype) / 9, "... -> ... 1 c", c=x.shape[-1]
+        )
+        del label
 
-        x = torch.cat([label_tensor, x], dim=1)  # Concatenate label with input
-        output = self.model(x)
-        assert output.shape[1:] == (28 * 15 + 1, 2), output.shape
-        return output[:, :-1]
+        # flatten height and width to sequence dim
+        orig_shape = x.shape
+        x = rearrange(x, "... h w c -> ... (h w) c")
+
+        # Concatenate label and image
+        x = torch.cat([label_tensor, x], dim=1)
+        del label_tensor
+
+        x = self.model(x)
+
+        # Remove the last token prediction
+        x = x[..., :-1, :]
+
+        # Reshape back to original shape
+        return x.reshape(*orig_shape)
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        x_hat = self(x, y)  # Pass label `y` to the forward method
-        loss = self.loss_fn(x_hat, x)
+        image, label = batch
+        predicted_image = self(image, label)
+        loss = self.loss_fn(predicted_image, image)
         self.log("train_loss", loss)
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr)
-
-
-def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
-    # Apply expm1 to complex freq_image's magnitude while keeping its angle
-    complex_image = torch.expm1(complex_image.abs()) * torch.exp(
-        1j * complex_image.angle()
-    )
-
-    time_image = torch.fft.irfft2(complex_image).real
-    return time_image
-
-
-def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
-    freq_image = freq_image.float().view(28, 15, 2)
-    freq_image_complex = torch.complex(freq_image[..., 0], freq_image[..., 1])
-
-    # Undo the sorting by frequency
-    freq_image_complex = unsort_by_frequency(freq_image_complex)
-
-    return freq_image_complex
+        return torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
 
 
 class ImageLoggingCallback(Callback):
@@ -255,7 +257,7 @@ if __name__ == "__main__":
         num_heads=args.num_heads,
         num_layers=args.num_layers,
         patchify=args.patchify,
-        lr=args.lr,
+        learning_rate=args.lr,
         compile_model=args.compile_model,
     ).to(dtype=image_dtype)
 
@@ -275,9 +277,9 @@ if __name__ == "__main__":
         devices=args.devices,
         logger=wandb_logger,
         gradient_clip_val=0.1,
-        callbacks=[
-            image_logging_callback,
-            autoregressive_sampling_callback,
-        ],
+        # callbacks=[
+        #     image_logging_callback,
+        #     autoregressive_sampling_callback,
+        # ],
     )
     trainer.fit(model, train_loader)

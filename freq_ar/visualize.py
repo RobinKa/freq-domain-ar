@@ -1,10 +1,11 @@
 import io
 
 import matplotlib.pyplot as plt
+import torch
 from PIL import Image
 
 
-def visualize_frequency_image(freq_image):
+def visualize_frequency_image(freq_image: torch.Tensor) -> Image.Image:
     """
     Visualizes a frequency image and returns it as a PIL Image for logging.
     """
