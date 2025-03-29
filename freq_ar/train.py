@@ -237,12 +237,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--run_name", type=str, default=None, help="Wandb run name")
     parser.add_argument(
-        "--log_every_n_steps", type=int, default=250, help="Log images every n steps"
+        "--log_every_n_steps", type=int, default=1000, help="Log images every n steps"
     )
     parser.add_argument(
         "--image_dtype",
         type=str,
-        default="float32",
+        default="bfloat16",
         help="Data type for images (e.g., float32, bfloat16)",
     )
     parser.add_argument(
