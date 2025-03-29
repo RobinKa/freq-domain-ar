@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import wandb
 from freq_ar.dataset import FrequencyMNIST, freq_to_time, split_to_complex
 from freq_ar.model import FrequencyARModel
-from freq_ar.visualize import visualize_frequency_image
+from freq_ar.visualize import render_complex_image
 
 
 class FrequencyARTrainer(pl.LightningModule):
@@ -41,10 +41,6 @@ class FrequencyARTrainer(pl.LightningModule):
         )
         del label
 
-        # flatten height and width to sequence dim
-        orig_shape = x.shape
-        x = rearrange(x, "... h w c -> ... (h w) c")
-
         # Concatenate label and image
         x = torch.cat([label_tensor, x], dim=1)
         del label_tensor
@@ -54,11 +50,11 @@ class FrequencyARTrainer(pl.LightningModule):
         # Remove the last token prediction
         x = x[..., :-1, :]
 
-        # Reshape back to original shape
-        return x.reshape(*orig_shape)
+        return x
 
     def training_step(self, batch, batch_idx):
         image, label = batch
+        image = rearrange(image, "... h w c -> ... (h w) c")
         predicted_image = self(image, label)
         loss = self.loss_fn(predicted_image, image)
         self.log("train_loss", loss)
@@ -76,44 +72,50 @@ class ImageLoggingCallback(Callback):
         if trainer.global_step % self.log_every_n_steps == 0:
             trainer.model.eval()
 
-            x, y = batch  # Extract a sample from the batch
+            # Run a single sample through the model BHW(2C)
+            batch_image, batch_label = batch
             with torch.no_grad():
                 freq_image = pl_module(
-                    x[0].unsqueeze(0), y[0].unsqueeze(0)
-                )  # Process the sample through the model
+                    rearrange(batch_image[:1], "... h w c -> ... (h w) c"),
+                    batch_label[:1],
+                )[0]
+                freq_image = rearrange(
+                    freq_image,
+                    "... (h w) c -> ... h w c",
+                    h=batch_image.shape[-3],
+                    w=batch_image.shape[-2],
+                )
 
             complex_image = split_to_complex(freq_image)
             time_image = freq_to_time(complex_image)
-            freq_image_vis = visualize_frequency_image(
-                complex_image.abs().cpu().numpy()
-            )
-            time_image_vis = visualize_frequency_image(time_image.cpu().numpy())
+            freq_image_vis = render_complex_image(complex_image.abs().cpu().numpy())
+            time_image_vis = render_complex_image(time_image.cpu().numpy())
 
-            input_complex_image = split_to_complex(x[0])
+            input_complex_image = split_to_complex(batch_image[0])
             input_time_image = freq_to_time(input_complex_image)
-            input_image_vis = visualize_frequency_image(
+            input_image_vis = render_complex_image(
                 input_complex_image.abs().cpu().numpy()
             )
-            input_time_image_vis = visualize_frequency_image(
-                input_time_image.cpu().numpy()
-            )
+            input_time_image_vis = render_complex_image(input_time_image.cpu().numpy())
 
             # Log to Wandb
             trainer.logger.experiment.log(
                 {
                     "frequency_image": wandb.Image(
-                        freq_image_vis, caption=f"Label: {y[0].item()}"
+                        freq_image_vis, caption=f"Label: {batch_label[0].item()}"
                     ),
                     "time_image": wandb.Image(
-                        time_image_vis, caption=f"Label: {y[0].item()}"
+                        time_image_vis, caption=f"Label: {batch_label[0].item()}"
                     ),
                     "input_image": wandb.Image(
-                        input_image_vis, caption=f"Label: {y[0].item()}"
+                        input_image_vis, caption=f"Label: {batch_label[0].item()}"
                     ),
                     "input_time_image": wandb.Image(
-                        input_time_image_vis, caption=f"Label: {y[0].item()}"
+                        input_time_image_vis, caption=f"Label: {batch_label[0].item()}"
                     ),
-                    "ground_truth": y[0].item(),  # Log ground truth as a scalar value
+                    "ground_truth": batch_label[
+                        0
+                    ].item(),  # Log ground truth as a scalar value
                 }
             )
 
@@ -142,10 +144,13 @@ class AutoRegressiveSamplingCallback(Callback):
 
             with torch.no_grad():
                 for sample_index in range(self.num_samples):
-                    random_label = torch.randint(0, 10, (1,), device=pl_module.device)
+                    # B
+                    label = torch.randint(0, 10, (1,), device=pl_module.device)
+
+                    # BHWC
                     generated_sequence = torch.zeros(
                         1, 28 * 15, 2, device=pl_module.device
-                    )  # Initialize an empty sequence
+                    )
 
                     freq_images = []
                     time_images = []
@@ -153,7 +158,7 @@ class AutoRegressiveSamplingCallback(Callback):
                     for i in range(
                         0, 28 * 15, self.patchify
                     ):  # Generate pixel by pixel
-                        output = pl_module(generated_sequence, random_label)
+                        output = pl_module(generated_sequence, label)
                         next_pixels = output[
                             :, i : i + self.patchify
                         ]  # Take the next predicted pixels
@@ -161,15 +166,15 @@ class AutoRegressiveSamplingCallback(Callback):
                             next_pixels  # Update the sequence
                         )
 
-                        freq_image = generated_sequence  # The full generated sequence
+                        freq_image = generated_sequence.reshape(28, 15, 2)
                         complex_image = split_to_complex(freq_image)
                         time_image = freq_to_time(complex_image)
 
                         freq_images.append(
-                            visualize_frequency_image(complex_image.abs().cpu().numpy())
+                            render_complex_image(complex_image.abs().cpu().numpy())
                         )
                         time_images.append(
-                            visualize_frequency_image(time_image.cpu().numpy())
+                            render_complex_image(time_image.cpu().numpy())
                         )
 
                     # Create videos, TCHW
@@ -186,7 +191,7 @@ class AutoRegressiveSamplingCallback(Callback):
                                 freq_and_time_video,
                                 fps=5,
                                 format="mp4",
-                                caption=f"Label: {random_label.item()}",
+                                caption=f"Label: {label.item()}",
                             ),
                         }
                     )
@@ -277,9 +282,9 @@ if __name__ == "__main__":
         devices=args.devices,
         logger=wandb_logger,
         gradient_clip_val=0.1,
-        # callbacks=[
-        #     image_logging_callback,
-        #     autoregressive_sampling_callback,
-        # ],
+        callbacks=[
+            image_logging_callback,
+            autoregressive_sampling_callback,
+        ],
     )
     trainer.fit(model, train_loader)

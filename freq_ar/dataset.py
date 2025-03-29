@@ -55,7 +55,7 @@ def freq_to_time(complex_image: torch.Tensor) -> torch.Tensor:
 
 
 def split_to_complex(freq_image: torch.Tensor) -> torch.Tensor:
-    freq_image = rearrange(freq_image.float(), "h w (d c) -> d c h w", d=2)
+    freq_image = rearrange(freq_image.float(), "... h w (d c) -> d ... c h w", d=2)
 
     freq_image_complex = torch.complex(freq_image[0], freq_image[1])
 
