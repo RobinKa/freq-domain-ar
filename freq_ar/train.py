@@ -151,6 +151,7 @@ class AutoRegressiveSamplingCallback(Callback):
             trainer.model.eval()
 
             height, width, channels = batch[0].shape[-3:]
+            dtype = batch[0].dtype
 
             with torch.no_grad():
                 for sample_index in range(self.num_samples):
@@ -159,7 +160,11 @@ class AutoRegressiveSamplingCallback(Callback):
 
                     # BHWC
                     generated_sequence = torch.zeros(
-                        1, height * width, channels, device=pl_module.device
+                        1,
+                        height * width,
+                        channels,
+                        device=pl_module.device,
+                        dtype=dtype,
                     )
 
                     freq_images = []
